@@ -1,0 +1,65 @@
+WITH base_personalizacoes AS (
+  SELECT
+    CASE 
+      WHEN pct.customization_method LIKE '[Básica]%' THEN 'Spot'
+      WHEN pct.customization_method LIKE '[Padrão]%' THEN 'LTP'
+      WHEN pct.customization_method LIKE '[%' THEN 
+        TRIM(BOTH '[' FROM SPLIT_PART(pct.customization_method, ']', 1))
+      ELSE 'Outros'
+    END AS tipo_personalizador,
+
+    -- Padronização dos nomes de personalização
+    CASE
+      WHEN pct.label ILIKE '%Aplicacao DTF%' THEN 'Aplicação DTF'
+      WHEN pct.label ILIKE '%Silk%' THEN 'Silk'
+      WHEN pct.label ILIKE '%UV%' THEN 'UV - Digital'
+      WHEN pct.label ILIKE '%Digital Cilindrica%' THEN 'Digital Cilíndrica - S/ verniz'
+      WHEN pct.label ILIKE '%Sublimacao%' THEN 'Sublimação'
+      WHEN pct.label ILIKE '%Bordado%' THEN 'Bordado'
+      WHEN pct.label ILIKE '%Laser%' THEN 'Laser'
+      WHEN pct.label ILIKE '%Decalque%' THEN 'Decalque'
+      WHEN pct.label ILIKE '%Transfer%' THEN 'Transfer'
+      WHEN pct.label ILIKE '%SILK%' THEN 'Silk' -- correção para duplicatas
+      WHEN pct.label ILIKE '%Inclusa%' THEN 'Personalização já inclusa'
+      WHEN pct.label ILIKE '%Sem Personalizacao%' THEN 'Sem Personalização'
+      ELSE INITCAP(pct.label)  -- capitaliza corretamente o restante
+    END AS tipo_personalizacao,
+
+    pcs.size_name AS tamanho_personalizacao,
+    sica.colors_quantity AS quantidade_cores,
+    sica.price AS valor_personalizacao,
+    TO_CHAR(DATE_TRUNC('month', s.expected_delivery), 'MM/YYYY') AS mes_ano_entrega
+  FROM sale_item_customization_areas sica
+  LEFT JOIN product_customization_types pct ON pct.id = sica.customization_type_id
+  LEFT JOIN product_customization_sizes pcs ON pcs.id = sica.customization_size_id
+  LEFT JOIN sale_items si ON si.id = sica.sale_item_id
+  LEFT JOIN sales s ON s.id = si.sale_id
+  WHERE s.status <> 'CANCELED'
+  aND s.expected_delivery BETWEEN DATE '2025-01-01' AND CURRENT_DATE
+),
+
+agrupado AS (
+  SELECT
+    tipo_personalizacao,
+    tamanho_personalizacao,
+    quantidade_cores,
+    tipo_personalizador,
+    mes_ano_entrega,
+    COUNT(*) AS quantidade,
+    SUM(valor_personalizacao) AS receita
+  FROM base_personalizacoes
+  GROUP BY tipo_personalizacao, tamanho_personalizacao, quantidade_cores, tipo_personalizador, mes_ano_entrega
+)
+
+SELECT
+  tipo_personalizacao AS "Tipo de Personalização",
+  tamanho_personalizacao AS "Tamanho",
+  quantidade_cores AS "Qtd Cores",
+  tipo_personalizador AS "Tipo de Personalizador",
+  mes_ano_entrega AS "Mês/Ano Entrega",
+  quantidade AS "Quantidade",
+  ROUND(receita, 2)::TEXT AS "Receita (R$)"
+FROM agrupado
+ORDER BY 
+  mes_ano_entrega ASC,
+  receita DESC NULLS LAST;
